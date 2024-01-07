@@ -13,7 +13,7 @@ import (
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(*config) error
+	callback    func(*config, ...string) error
 }
 
 type config struct {
@@ -35,11 +35,15 @@ func main() {
 
 		words := cleanInput(reader.Text())
 		cmd := words[0]
+		args := []string{}
+		if len(words) > 1 {
+			args = words[1:]
+		}
 
 		result, ok := getCommand()[cmd]
 
 		if ok {
-			err := result.callback(cfg)
+			err := result.callback(cfg, args...)
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -78,10 +82,15 @@ func getCommand() map[string]cliCommand {
 			description: "Prints (the previous) 20 locations",
 			callback:    commandMapb,
 		},
+		"explore": {
+			name:        "explore",
+			description: "Prints pokemons in a location",
+			callback:    commandExplore,
+		},
 	}
 }
 
-func commandHelp(cfg *config) error {
+func commandHelp(cfg *config, args ...string) error {
 	v := getCommand()
 	for _, value := range v {
 		fmt.Printf("%s: %s\n", value.name, value.description)
@@ -89,12 +98,12 @@ func commandHelp(cfg *config) error {
 	return nil
 }
 
-func commandExit(cfg *config) error {
+func commandExit(cfg *config, args ...string) error {
 	os.Exit(0)
 	return nil
 }
 
-func commandMapf(cfg *config) error {
+func commandMapf(cfg *config, args ...string) error {
 	locationsResp, err := cfg.pokeapiClient.ListLocations(cfg.nextLocationsURL)
 	if err != nil {
 		return err
@@ -109,7 +118,7 @@ func commandMapf(cfg *config) error {
 	return nil
 }
 
-func commandMapb(cfg *config) error {
+func commandMapb(cfg *config, args ...string) error {
 	if cfg.prevLocationsURL == nil {
 		return errors.New("you're on the first page")
 	}
@@ -125,5 +134,23 @@ func commandMapb(cfg *config) error {
 	for _, loc := range locationResp.Results {
 		fmt.Println(loc.Name)
 	}
+	return nil
+}
+
+func commandExplore(cfg *config, args ...string) error {
+	if len(args) != 1 {
+		return errors.New("you must provide a location name")
+	}
+
+	name := args[0]
+	locationResp, err := cfg.pokeapiClient.ExploreLocation(name)
+	if err != nil {
+		return err
+	}
+
+	for _, poks := range locationResp.PokemonEncounters {
+		fmt.Println(poks.Pokemon.Name)
+	}
+
 	return nil
 }
