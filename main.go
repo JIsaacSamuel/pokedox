@@ -2,26 +2,33 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"internal/maps"
 	"os"
 	"strings"
-	// "internal/maps"
+	"time"
 )
 
 type cliCommand struct {
 	name        string
 	description string
-	callback    func() error
+	callback    func(*config) error
 }
 
 type config struct {
-	next string
-	prev string
+	pokeapiClient    maps.Client
+	nextLocationsURL *string
+	prevLocationsURL *string
 }
 
 func main() {
 	reader := bufio.NewScanner(os.Stdin)
+	pokeClient := maps.NewClient(5 * time.Second)
+	cfg := &config{
+		pokeapiClient: pokeClient,
+	}
+
 	for {
 		fmt.Print("Pokedex > ")
 		reader.Scan()
@@ -32,12 +39,13 @@ func main() {
 		result, ok := getCommand()[cmd]
 
 		if ok {
-			err := result.callback()
+			err := result.callback(cfg)
 			if err != nil {
+				fmt.Println(err)
 				continue
 			}
 		} else {
-			fmt.Print("Command does not exist")
+			fmt.Print("Command does not exist\n")
 		}
 	}
 }
@@ -63,17 +71,17 @@ func getCommand() map[string]cliCommand {
 		"map": {
 			name:        "map",
 			description: "Prints (the next) 20 locations",
-			callback:    maps.Map,
+			callback:    commandMapf,
 		},
 		"mapb": {
 			name:        "mapb",
 			description: "Prints (the previous) 20 locations",
-			callback:    maps.Mapb,
+			callback:    commandMapb,
 		},
 	}
 }
 
-func commandHelp() error {
+func commandHelp(cfg *config) error {
 	v := getCommand()
 	for _, value := range v {
 		fmt.Printf("%s: %s\n", value.name, value.description)
@@ -81,7 +89,41 @@ func commandHelp() error {
 	return nil
 }
 
-func commandExit() error {
+func commandExit(cfg *config) error {
 	os.Exit(0)
+	return nil
+}
+
+func commandMapf(cfg *config) error {
+	locationsResp, err := cfg.pokeapiClient.ListLocations(cfg.nextLocationsURL)
+	if err != nil {
+		return err
+	}
+
+	cfg.nextLocationsURL = locationsResp.Next
+	cfg.prevLocationsURL = locationsResp.Previous
+
+	for _, loc := range locationsResp.Results {
+		fmt.Println(loc.Name)
+	}
+	return nil
+}
+
+func commandMapb(cfg *config) error {
+	if cfg.prevLocationsURL == nil {
+		return errors.New("you're on the first page")
+	}
+
+	locationResp, err := cfg.pokeapiClient.ListLocations(cfg.prevLocationsURL)
+	if err != nil {
+		return err
+	}
+
+	cfg.nextLocationsURL = locationResp.Next
+	cfg.prevLocationsURL = locationResp.Previous
+
+	for _, loc := range locationResp.Results {
+		fmt.Println(loc.Name)
+	}
 	return nil
 }
